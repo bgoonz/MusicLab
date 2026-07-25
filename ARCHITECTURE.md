@@ -16,9 +16,16 @@ The interface is a production-shaped prototype for transcript upload, AI tool su
 ## Service boundaries to connect next
 
 - `AI_PROVIDER_API_KEY`: server-only secret for transcript analysis and tool specs.
-- GitHub App credentials: server-only installation token with contents/PR access limited to this repository.
-- Stripe: Checkout plus a webhook-backed usage ledger. Charge money into credits; reserve credits before an AI request and finalize against measured token usage afterward.
+- `GITHUB_TOKEN`: a server-only fine-grained token restricted to `bgoonz/MusicLab`, with Contents and Pull requests write access. The first production hardening step is replacing this with short-lived GitHub App installation tokens.
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`: Stripe Checkout plus a webhook-backed usage ledger. Charge money into credits; reserve credits before an AI request and finalize against measured token usage afterward.
 - Authentication: required for uploads, drafts, publishing, credits, and moderation history.
+
+## Prepaid credit behavior
+
+- Checkout packages are closed-loop, non-transferable Practice Lab credits.
+- One US dollar purchased becomes one dollar of metered AI balance. Processing fees are currently absorbed by the product; add a margin or package fee before broad public launch.
+- The Stripe webhook is the only path that adds balance. It verifies the raw request signature, validates the server-defined package amount, requires a matching pending order, and uses the Stripe Checkout Session ID as an idempotency key.
+- Before calling an AI provider, the server atomically reserves a maximum cost. After the response, it records input/output token counts, debits the actual provider cost, and refunds the unused reservation.
 
 ## Categories
 

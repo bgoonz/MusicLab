@@ -5,6 +5,7 @@ import {
   AudioLines,
   Check,
   CircleUserRound,
+  CreditCard,
   FileText,
   GitPullRequest,
   Headphones,
@@ -18,11 +19,12 @@ import {
   Sparkles,
   Timer,
   Upload,
+  WalletCards,
   WandSparkles,
   X,
   Zap,
 } from "lucide-react";
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Tool = {
   title: string;
@@ -145,7 +147,28 @@ export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [step, setStep] = useState<"input" | "analyzing" | "suggestions">("input");
   const [notice, setNotice] = useState("");
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [balanceUsd, setBalanceUsd] = useState<number | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState("");
+  const [walletMessage, setWalletMessage] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+
+  async function refreshBalance() {
+    const response = await fetch("/api/billing/balance");
+    if (!response.ok) return;
+    const data = await response.json() as { balanceUsd: number };
+    setBalanceUsd(data.balanceUsd);
+  }
+
+  useEffect(() => {
+    void refreshBalance();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") === "success") {
+      setWalletOpen(true);
+      setWalletMessage("Payment received. Your credits will appear as soon as Stripe confirms the checkout.");
+      window.setTimeout(() => void refreshBalance(), 1500);
+    }
+  }, []);
 
   const filteredTools = useMemo(() => {
     const normalized = query.toLowerCase();
@@ -177,6 +200,23 @@ export default function Home() {
     window.setTimeout(() => setStep("suggestions"), 1100);
   }
 
+  async function purchaseCredits(packageId: string) {
+    setCheckoutLoading(packageId);
+    setWalletMessage("");
+    const response = await fetch("/api/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId }),
+    });
+    const data = await response.json() as { checkoutUrl?: string; error?: string };
+    if (!response.ok || !data.checkoutUrl) {
+      setWalletMessage(data.error ?? "Checkout could not be started.");
+      setCheckoutLoading("");
+      return;
+    }
+    window.location.assign(data.checkoutUrl);
+  }
+
   return (
     <main>
       <header className="site-header">
@@ -190,6 +230,10 @@ export default function Home() {
           <a href="#create">Build a tool</a>
         </nav>
         <div className="header-actions">
+          <button className="credit-balance" onClick={() => setWalletOpen(true)} aria-label="Open AI credits wallet">
+            <WalletCards size={17} />
+            <span>{balanceUsd === null ? "AI credits" : `$${balanceUsd.toFixed(2)}`}</span>
+          </button>
           <button className="icon-button" aria-label="Search tools" onClick={() => document.querySelector<HTMLInputElement>("#tool-search")?.focus()}>
             <Search size={20} />
           </button>
@@ -356,6 +400,43 @@ export default function Home() {
         <div><a href="#discover">Discover</a><a href="#how">How it works</a><a href="#create">Build a tool</a></div>
         <small>© 2026 Practice Lab · Made with care for musicians everywhere.</small>
       </footer>
+
+      {walletOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.currentTarget === event.target) setWalletOpen(false);
+        }}>
+          <section className="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="wallet-title" id="credits">
+            <button className="close-button wallet-close" aria-label="Close credits wallet" onClick={() => setWalletOpen(false)}>
+              <X size={20} />
+            </button>
+            <span className="wallet-icon"><WalletCards size={24} /></span>
+            <span className="kicker">PREPAID AI WALLET</span>
+            <h2 id="wallet-title">Keep your practice moving</h2>
+            <p>Buy credits once, then use them for lesson analysis and tool building. Your balance is charged only for measured AI usage.</p>
+            <div className="wallet-balance">
+              <span>Available balance</span>
+              <strong>{balanceUsd === null ? "—" : `$${balanceUsd.toFixed(2)}`}</strong>
+              <small>1 credit dollar = $1 of metered AI usage</small>
+            </div>
+            <div className="credit-packages">
+              {[
+                { id: "starter", amount: 5, label: "Try a few lesson ideas" },
+                { id: "practice", amount: 15, label: "For regular weekly practice", popular: true },
+                { id: "studio", amount: 30, label: "For deeper tool building" },
+              ].map((item) => (
+                <button key={item.id} className={item.popular ? "popular" : ""} disabled={!!checkoutLoading} onClick={() => void purchaseCredits(item.id)}>
+                  {item.popular && <span className="popular-label">Most popular</span>}
+                  <b>${item.amount}</b>
+                  <span>${item.amount} AI credit</span>
+                  <small>{checkoutLoading === item.id ? "Opening checkout…" : item.label}</small>
+                </button>
+              ))}
+            </div>
+            {walletMessage && <p className="wallet-message">{walletMessage}</p>}
+            <div className="wallet-security"><CreditCard size={15} /><span>Secure checkout by Stripe · Credits are non-transferable and used only inside Practice Lab</span></div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
