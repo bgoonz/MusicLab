@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GeneratedToolPlayer } from "./GeneratedToolPlayer";
+import { StarterExerciseKind, StarterExercisePlayer } from "./StarterExercisePlayer";
 import { GeneratedToolSpec } from "../lib/tool-spec";
 
 type Tool = {
@@ -40,6 +41,7 @@ type Tool = {
   featured?: boolean;
   isMine?: boolean;
   manifest?: GeneratedToolSpec;
+  starterKind?: StarterExerciseKind;
 };
 
 type AuthState = {
@@ -56,65 +58,71 @@ type PublishedTool = GeneratedToolSpec & {
 
 const starterTools: Tool[] = [
   {
-    title: "Accent Shift Metronome",
-    description: "Move the accent through each beat to strengthen your internal pulse.",
-    category: "Metronome",
+    title: "Staff Note Sprint",
+    description: "Read notes on a compact staff and build fast pitch-name recognition.",
+    category: "Sight-reading",
     icon: "timer",
     uses: "2.4k",
     tint: "peach",
-    author: "Maya R.",
+    author: "Practice Lab",
+    starterKind: "staff-notes",
     featured: true,
   },
   {
-    title: "Slow-Down Looper",
-    description: "Loop any tricky section and gradually bring it back to tempo.",
-    category: "Play-along",
+    title: "Keyboard Note Finder",
+    description: "Match requested note names to keys on a one-octave keyboard.",
+    category: "Theory",
     icon: "track",
     uses: "1.8k",
     tint: "lavender",
-    author: "Theo W.",
+    author: "Practice Lab",
+    starterKind: "keyboard-notes",
     featured: true,
   },
   {
-    title: "Subdivision Trainer",
-    description: "Hear and tap eighths, triplets, and sixteenths against a steady beat.",
-    category: "Rhythm",
+    title: "Fretboard Note Finder",
+    description: "Identify notes from string-and-fret positions across the guitar neck.",
+    category: "Theory",
     icon: "rhythm",
     uses: "1.3k",
     tint: "blue",
-    author: "Jamie L.",
+    author: "Practice Lab",
+    starterKind: "fretboard-notes",
     featured: true,
   },
   {
-    title: "Interval Echo",
-    description: "Listen, sing back, and identify intervals across your instrument.",
+    title: "Interval Sound Lab",
+    description: "Hear ascending intervals and identify their musical distance.",
     category: "Ear training",
     icon: "ear",
     uses: "956",
     tint: "mint",
-    author: "Noor A.",
+    author: "Practice Lab",
+    starterKind: "interval-ear",
   },
   {
-    title: "Scale Sprint",
-    description: "Build clean, even scales with adaptive tempo steps and rest cycles.",
-    category: "Technique",
+    title: "Chord Quality Lab",
+    description: "Compare major, minor, diminished, dominant, and major-seventh chords by ear.",
+    category: "Ear training",
     icon: "timer",
     uses: "842",
     tint: "yellow",
-    author: "Chris P.",
+    author: "Practice Lab",
+    starterKind: "chord-ear",
   },
   {
-    title: "Chord Change Coach",
-    description: "Practice difficult chord pairs inside a supportive backing groove.",
-    category: "Play-along",
+    title: "Scale Sound Lab",
+    description: "Distinguish major, minor, and pentatonic scale colors by listening.",
+    category: "Ear training",
     icon: "track",
     uses: "731",
     tint: "pink",
-    author: "Avery S.",
+    author: "Practice Lab",
+    starterKind: "scale-ear",
   },
 ];
 
-const categories = ["All tools", "Metronome", "Play-along", "Rhythm", "Ear training", "Technique"];
+const categories = ["All tools", "Metronome", "Play-along", "Rhythm", "Ear training", "Technique", "Sight-reading", "Theory"];
 
 function ToolIcon({ type }: { type: Tool["icon"] }) {
   if (type === "timer") return <Timer size={23} strokeWidth={1.9} />;
@@ -123,7 +131,15 @@ function ToolIcon({ type }: { type: Tool["icon"] }) {
   return <Mic2 size={23} strokeWidth={1.9} />;
 }
 
-function ToolCard({ tool, onOpen }: { tool: Tool; onOpen?: (tool: GeneratedToolSpec) => void }) {
+function ToolCard({
+  tool,
+  onOpen,
+  onOpenStarter,
+}: {
+  tool: Tool;
+  onOpen?: (tool: GeneratedToolSpec) => void;
+  onOpenStarter?: (tool: Tool) => void;
+}) {
   const [playing, setPlaying] = useState(false);
   return (
     <article className="tool-card">
@@ -136,6 +152,7 @@ function ToolCard({ tool, onOpen }: { tool: Tool; onOpen?: (tool: GeneratedToolS
           aria-label={`${playing ? "Pause" : "Preview"} ${tool.title}`}
           onClick={() => {
             if (tool.manifest && onOpen) onOpen(tool.manifest);
+            else if (tool.starterKind && onOpenStarter) onOpenStarter(tool);
             else setPlaying(!playing);
           }}
         >
@@ -152,7 +169,7 @@ function ToolCard({ tool, onOpen }: { tool: Tool; onOpen?: (tool: GeneratedToolS
         <div className="tool-meta">
           <span>by {tool.author}</span>
           {tool.isMine && <span className="mine-badge">Yours</span>}
-          <span><Zap size={13} fill="currentColor" /> {tool.uses} uses</span>
+          <span><Zap size={13} fill="currentColor" /> {tool.starterKind ? "Interactive" : `${tool.uses} uses`}</span>
         </div>
       </div>
     </article>
@@ -167,6 +184,7 @@ export default function Home() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [publishedTools, setPublishedTools] = useState<PublishedTool[]>([]);
   const [selectedLibraryTool, setSelectedLibraryTool] = useState<GeneratedToolSpec | null>(null);
+  const [selectedStarterTool, setSelectedStarterTool] = useState<Tool | null>(null);
   const [transcript, setTranscript] = useState("");
   const [fileName, setFileName] = useState("");
   const [mode, setMode] = useState<"suggest" | "describe">("suggest");
@@ -594,7 +612,12 @@ export default function Home() {
         )}
         <div className="tool-grid">
           {(libraryScope !== "mine" || auth?.user) && filteredTools.map((tool) => (
-            <ToolCard key={tool.id ?? tool.title} tool={tool} onOpen={setSelectedLibraryTool} />
+            <ToolCard
+              key={tool.id ?? tool.title}
+              tool={tool}
+              onOpen={setSelectedLibraryTool}
+              onOpenStarter={setSelectedStarterTool}
+            />
           ))}
         </div>
         {(libraryScope !== "mine" || auth?.user) && filteredTools.length === 0 && (
@@ -635,6 +658,20 @@ export default function Home() {
                 configuration: { ...current.configuration, bpm },
               } : current)}
             />
+          </section>
+        </div>
+      )}
+
+      {selectedStarterTool?.starterKind && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.currentTarget === event.target) setSelectedStarterTool(null);
+        }}>
+          <section className="tool-preview-modal" role="dialog" aria-modal="true" aria-label={`Practice with ${selectedStarterTool.title}`}>
+            <div className="modal-heading">
+              <div><span>Practice Lab starter</span><h2>{selectedStarterTool.title}</h2><p>{selectedStarterTool.description}</p></div>
+              <button className="close-button" aria-label="Close exercise" onClick={() => setSelectedStarterTool(null)}><X size={20} /></button>
+            </div>
+            <StarterExercisePlayer kind={selectedStarterTool.starterKind} />
           </section>
         </div>
       )}
