@@ -171,8 +171,24 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("payment") === "success") {
         setWalletOpen(true);
-        setWalletMessage("Payment received. Your credits will appear as soon as Stripe confirms the checkout.");
-        window.setTimeout(() => void refreshBalance(), 1500);
+        const sessionId = params.get("session_id");
+        setWalletMessage("Payment received. Verifying your credits…");
+        if (sessionId) {
+          void fetch("/api/billing/reconcile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          }).then(async (response) => {
+            const data = await response.json() as { balanceUsd?: number; error?: string };
+            if (!response.ok || data.balanceUsd === undefined) {
+              setWalletMessage(data.error ?? "Your payment is confirmed, but the balance could not be refreshed.");
+              return;
+            }
+            setBalanceUsd(data.balanceUsd);
+            setWalletMessage(`Payment confirmed. $${data.balanceUsd.toFixed(2)} is ready to use.`);
+            window.history.replaceState({}, "", `${window.location.pathname}#create`);
+          });
+        }
       }
     }, 0);
     return () => window.clearTimeout(timer);
