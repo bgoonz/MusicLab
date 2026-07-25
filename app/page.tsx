@@ -26,8 +26,10 @@ import {
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GeneratedToolPlayer } from "./GeneratedToolPlayer";
-import { StarterExerciseKind, StarterExercisePlayer } from "./StarterExercisePlayer";
+import { StarterExercisePlayer } from "./StarterExercisePlayer";
+import { STARTER_TOOLS, StarterExerciseKind } from "../lib/starter-catalog";
 import { GeneratedToolSpec } from "../lib/tool-spec";
+import { rankTools } from "../lib/tool-search";
 
 type Tool = {
   id?: string;
@@ -56,71 +58,26 @@ type PublishedTool = GeneratedToolSpec & {
   useCount: number;
 };
 
-const starterTools: Tool[] = [
-  {
-    title: "Staff Note Sprint",
-    description: "Read notes on a compact staff and build fast pitch-name recognition.",
-    category: "Sight-reading",
-    icon: "timer",
-    uses: "2.4k",
-    tint: "peach",
-    author: "Practice Lab",
-    starterKind: "staff-notes",
-    featured: true,
-  },
-  {
-    title: "Keyboard Note Finder",
-    description: "Match requested note names to keys on a one-octave keyboard.",
-    category: "Theory",
-    icon: "track",
-    uses: "1.8k",
-    tint: "lavender",
-    author: "Practice Lab",
-    starterKind: "keyboard-notes",
-    featured: true,
-  },
-  {
-    title: "Fretboard Note Finder",
-    description: "Identify notes from string-and-fret positions across the guitar neck.",
-    category: "Theory",
-    icon: "rhythm",
-    uses: "1.3k",
-    tint: "blue",
-    author: "Practice Lab",
-    starterKind: "fretboard-notes",
-    featured: true,
-  },
-  {
-    title: "Interval Sound Lab",
-    description: "Hear ascending intervals and identify their musical distance.",
-    category: "Ear training",
-    icon: "ear",
-    uses: "956",
-    tint: "mint",
-    author: "Practice Lab",
-    starterKind: "interval-ear",
-  },
-  {
-    title: "Chord Quality Lab",
-    description: "Compare major, minor, diminished, dominant, and major-seventh chords by ear.",
-    category: "Ear training",
-    icon: "timer",
-    uses: "842",
-    tint: "yellow",
-    author: "Practice Lab",
-    starterKind: "chord-ear",
-  },
-  {
-    title: "Scale Sound Lab",
-    description: "Distinguish major, minor, and pentatonic scale colors by listening.",
-    category: "Ear training",
-    icon: "track",
-    uses: "731",
-    tint: "pink",
-    author: "Practice Lab",
-    starterKind: "scale-ear",
-  },
-];
+type ExistingSuggestion = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  starterKind: StarterExerciseKind | null;
+  tool: GeneratedToolSpec | null;
+};
+
+const starterTools: Tool[] = STARTER_TOOLS.map((tool, index) => ({
+  ...tool,
+  icon: tool.starterKind === "interval-ear" ? "ear"
+    : tool.starterKind === "fretboard-notes" ? "rhythm"
+      : tool.starterKind === "keyboard-notes" || tool.starterKind === "scale-ear" ? "track"
+        : "timer",
+  uses: "0",
+  tint: ["peach", "lavender", "blue", "mint", "yellow", "pink"][index],
+  author: "Practice Lab",
+  featured: index < 3,
+}));
 
 const categories = ["All tools", "Metronome", "Play-along", "Rhythm", "Ear training", "Technique", "Sight-reading", "Theory"];
 
@@ -158,6 +115,7 @@ function ToolCard({
         >
           {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
         </button>
+        {tool.starterKind && <span className="starter-card-cta">Open exercise</span>}
       </div>
       <div className="tool-body">
         <div className="tool-category">
@@ -270,11 +228,22 @@ export default function Home() {
     const availableTools = libraryScope === "mine"
       ? communityTools.filter((tool) => tool.isMine)
       : [...communityTools, ...starterTools];
-    return availableTools.filter((tool) => {
+    const categoryMatches = availableTools.filter((tool) => {
       const matchesCategory = activeCategory === "All tools" || tool.category === activeCategory;
-      const matchesSearch = `${tool.title} ${tool.description} ${tool.category}`.toLowerCase().includes(normalized);
-      return matchesCategory && matchesSearch;
+      return matchesCategory;
     });
+    if (!normalized) return categoryMatches;
+    const rankedIds = new Set(rankTools(normalized, categoryMatches.map((tool) => ({
+      id: tool.id ?? tool.title,
+      title: tool.title,
+      description: tool.description,
+      category: tool.category,
+      instructions: tool.manifest?.instructions,
+      searchTerms: tool.starterKind
+        ? STARTER_TOOLS.find((starter) => starter.starterKind === tool.starterKind)?.searchTerms
+        : undefined,
+    })), 100).map((tool) => tool.id));
+    return categoryMatches.filter((tool) => rankedIds.has(tool.id ?? tool.title));
   }, [activeCategory, libraryScope, publishedTools, query]);
 
   async function readFile(event: ChangeEvent<HTMLInputElement>) {
@@ -286,6 +255,17 @@ export default function Home() {
     } else {
       setTranscript("Audio lesson attached. Transcription will begin when the AI service is connected.");
     }
+  }
+
+  function openExistingSuggestion(suggestion: ExistingSuggestion) {
+    setStep("input");
+    setNotice(`We found an existing tool that already matches: ${suggestion.title}. Opening it instead of creating a duplicate.`);
+    if (suggestion.tool) {
+      setSelectedLibraryTool(suggestion.tool);
+      return;
+    }
+    const starter = starterTools.find((tool) => tool.id === suggestion.id);
+    if (starter) setSelectedStarterTool(starter);
   }
 
   async function buildTool() {
@@ -301,7 +281,17 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transcript, prompt, mode }),
     });
-    const data = await response.json() as { tool?: GeneratedToolSpec; error?: string; warning?: string };
+    const data = await response.json() as {
+      tool?: GeneratedToolSpec;
+      existingSuggestion?: ExistingSuggestion;
+      error?: string;
+      warning?: string;
+    };
+    if (response.ok && data.existingSuggestion) {
+      openExistingSuggestion(data.existingSuggestion);
+      void refreshBalance();
+      return;
+    }
     if (!response.ok || !data.tool) {
       setStep("input");
       setNotice(data.error ?? "The AI could not build this tool.");
@@ -349,8 +339,18 @@ export default function Home() {
         currentTool: generatedTool,
       }),
     });
-    const data = await response.json() as { tool?: GeneratedToolSpec; error?: string; warning?: string };
+    const data = await response.json() as {
+      tool?: GeneratedToolSpec;
+      existingSuggestion?: ExistingSuggestion;
+      error?: string;
+      warning?: string;
+    };
     setRefiningTool(false);
+    if (response.ok && data.existingSuggestion) {
+      openExistingSuggestion(data.existingSuggestion);
+      void refreshBalance();
+      return;
+    }
     if (!response.ok || !data.tool) {
       setNotice(data.error ?? "The AI could not apply that change.");
       if (response.status === 402) setWalletOpen(true);

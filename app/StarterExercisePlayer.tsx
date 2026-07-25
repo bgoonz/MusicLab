@@ -2,14 +2,7 @@
 
 import { Headphones, Play, RotateCcw } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-
-export type StarterExerciseKind =
-  | "staff-notes"
-  | "keyboard-notes"
-  | "fretboard-notes"
-  | "interval-ear"
-  | "chord-ear"
-  | "scale-ear";
+import { StarterExerciseKind } from "../lib/starter-catalog";
 
 const NOTES = ["C", "D", "E", "F", "G", "A", "B"];
 const CHROMATIC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];

@@ -1,8 +1,10 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { ensureCreditAccount, releaseCredits, reserveCredits, RETAIL_MARKUP, settleCredits } from "../../../../lib/billing";
 import { moderateText } from "../../../../lib/moderation";
-import { requiredSecret } from "../../../../lib/runtime";
+import { requiredSecret, runtime } from "../../../../lib/runtime";
+import { STARTER_TOOLS } from "../../../../lib/starter-catalog";
 import { GeneratedToolSpec, isGeneratedToolSpec } from "../../../../lib/tool-spec";
+import { rankTools, SearchableTool } from "../../../../lib/tool-search";
 
 const MODEL = "gpt-5.6-luna";
 const MAXIMUM_PROVIDER_COST_MICRO_USD = 100_000;
@@ -11,8 +13,9 @@ const MAXIMUM_RETAIL_COST_MICRO_USD = Math.ceil(MAXIMUM_PROVIDER_COST_MICRO_USD 
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "description", "category", "why", "instructions", "configuration"],
+  required: ["existingToolId", "title", "description", "category", "why", "instructions", "configuration"],
   properties: {
+    existingToolId: { type: "string", maxLength: 100 },
     title: { type: "string", maxLength: 100 },
     description: { type: "string", maxLength: 500 },
     category: { type: "string", enum: ["Metronome", "Play-along", "Rhythm", "Ear training", "Technique", "Sight-reading", "Theory"] },
@@ -169,6 +172,40 @@ export async function POST(request: Request) {
 
   const userId = user.email.toLowerCase();
   await ensureCreditAccount(userId, user.email);
+  const publishedRows = await runtime().DB.prepare(
+    `SELECT id, title, description, category, manifest_json AS manifestJson
+     FROM practice_tools WHERE status = 'published'
+     ORDER BY published_at DESC LIMIT 100`,
+  ).all<{ id: string; title: string; description: string; category: string; manifestJson: string | null }>();
+  const publishedSearchTools: SearchableTool[] = publishedRows.results.flatMap((row) => {
+    if (!row.manifestJson) return [];
+    try {
+      const manifest = JSON.parse(row.manifestJson) as unknown;
+      if (!isGeneratedToolSpec(manifest)) return [];
+      return [{
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        category: row.category,
+        instructions: manifest.instructions,
+        manifestJson: row.manifestJson,
+      }];
+    } catch {
+      return [];
+    }
+  });
+  const existingCandidates = rankTools(
+    `${effectivePrompt}\n${transcript.slice(0, 6_000)}`,
+    [
+      ...STARTER_TOOLS.map((tool) => ({ ...tool })),
+      ...publishedSearchTools,
+    ],
+  );
+  const candidatePrompt = existingCandidates.length
+    ? existingCandidates.map((candidate) =>
+      `- ID: ${candidate.id}\n  Title: ${candidate.title}\n  Category: ${candidate.category}\n  Description: ${candidate.description}`
+    ).join("\n")
+    : "(No plausible existing tools were retrieved.)";
   const requestId = crypto.randomUUID();
   let usageId: string;
   try {
@@ -209,11 +246,11 @@ export async function POST(request: Request) {
         input: [
           {
             role: "system",
-            content: `You design focused, immediately playable music-practice tools. Map every request to exactly one safe runtime: metronome for pulse/dropout/tempo/chord progression, rhythm for subdivisions or patterns, drone for intonation/scale/chord practice, interval for ear training, or timer for repetition/session routines. All configuration fields are required even if a runtime ignores some. Pattern is sixteen steps: 0 rest, 1 hit, 2 accent. When hearing harmony would help, populate chordProgression with standard chord symbols such as Cmaj7, Dm7, G7, or Am and set chordEveryBars. Otherwise return an empty chordProgression. Do not claim features outside these runtimes. Write concise musician-friendly copy.`,
+            content: `You design focused, immediately playable music-practice tools. First compare the request against the retrieved existing tools. If one already fulfills the same musical goal and interaction, put its exact ID in existingToolId. Prefer reuse even when wording, key, or tempo differs in ways the existing tool already allows the user to adjust. Otherwise set existingToolId to an empty string and create a new tool. Map new tools to exactly one safe runtime: metronome for pulse/dropout/tempo/chord progression, rhythm for subdivisions or patterns, drone for intonation/scale/chord practice, interval for ear training, or timer for repetition/session routines. All configuration fields are required even when reusing an existing tool or a runtime ignores some. Pattern is sixteen steps: 0 rest, 1 hit, 2 accent. When hearing harmony would help, populate chordProgression with standard chord symbols such as Cmaj7, Dm7, G7, or Am and set chordEveryBars. Otherwise return an empty chordProgression. Do not claim features outside these runtimes. Write concise musician-friendly copy.`,
           },
           {
             role: "user",
-            content: `Mode: ${body?.mode === "describe" ? "User described the desired tool" : "Suggest the best tool from the lesson"}\nRequested tool or refinement: ${effectivePrompt || "(not specified)"}\nLesson transcript or notes:\n${transcript || "(not supplied)"}`,
+            content: `Mode: ${body?.mode === "describe" ? "User described the desired tool" : "Suggest the best tool from the lesson"}\nRequested tool or refinement: ${effectivePrompt || "(not specified)"}\nLesson transcript or notes:\n${transcript || "(not supplied)"}\n\nRetrieved existing tools:\n${candidatePrompt}`,
           },
         ],
         text: {
@@ -232,12 +269,39 @@ export async function POST(request: Request) {
       throw new Error(apiError?.message ?? "The AI provider could not build the tool.");
     }
 
-    const raw = JSON.parse(extractOutputText(payload)) as Omit<GeneratedToolSpec, "id" | "slug" | "version">;
+    const raw = JSON.parse(extractOutputText(payload)) as Omit<GeneratedToolSpec, "id" | "slug" | "version"> & {
+      existingToolId: string;
+    };
+    const usage = (payload.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
+    const inputTokens = usage.input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    const providerActualMicroUsd = Math.min(MAXIMUM_PROVIDER_COST_MICRO_USD, inputTokens + outputTokens * 6);
+    const actualMicroUsd = Math.ceil(providerActualMicroUsd * RETAIL_MARKUP);
+    const existingCandidate = existingCandidates.find((candidate) => candidate.id === raw.existingToolId);
+    if (existingCandidate) {
+      await settleCredits({ usageId, userId, inputTokens, outputTokens, actualMicroUsd, providerActualMicroUsd });
+      const existingManifest = existingCandidate.manifestJson
+        ? JSON.parse(existingCandidate.manifestJson) as unknown
+        : null;
+      return Response.json({
+        existingSuggestion: {
+          id: existingCandidate.id,
+          title: existingCandidate.title,
+          description: existingCandidate.description,
+          category: existingCandidate.category,
+          starterKind: existingCandidate.starterKind ?? null,
+          tool: isGeneratedToolSpec(existingManifest) ? existingManifest : null,
+        },
+        usage: { inputTokens, outputTokens, costUsd: actualMicroUsd / 1_000_000 },
+      });
+    }
+    const { existingToolId: _existingToolId, ...generatedFields } = raw;
+    void _existingToolId;
     const unique = Date.now().toString(36);
     const tool: GeneratedToolSpec = {
-      ...raw,
-      id: `${slugify(raw.title)}-${unique}`,
-      slug: `${slugify(raw.title)}-${unique}`,
+      ...generatedFields,
+      id: `${slugify(generatedFields.title)}-${unique}`,
+      slug: `${slugify(generatedFields.title)}-${unique}`,
       version: 1,
     };
     if (!isGeneratedToolSpec(tool)) throw new Error("The AI returned a tool that the practice player could not validate.");
@@ -250,11 +314,6 @@ export async function POST(request: Request) {
       throw new Error("The generated tool did not pass the safety review.");
     }
 
-    const usage = (payload.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
-    const inputTokens = usage.input_tokens ?? 0;
-    const outputTokens = usage.output_tokens ?? 0;
-    const providerActualMicroUsd = Math.min(MAXIMUM_PROVIDER_COST_MICRO_USD, inputTokens + outputTokens * 6);
-    const actualMicroUsd = Math.ceil(providerActualMicroUsd * RETAIL_MARKUP);
     await settleCredits({ usageId, userId, inputTokens, outputTokens, actualMicroUsd, providerActualMicroUsd });
 
     return Response.json({ tool, usage: { inputTokens, outputTokens, costUsd: actualMicroUsd / 1_000_000 } });
