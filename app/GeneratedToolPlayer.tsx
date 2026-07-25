@@ -19,6 +19,21 @@ export function GeneratedToolPlayer({
   onBpmChange: (bpm: number) => void;
 }) {
   const config = tool.configuration;
+  const titleLower = tool.title.toLowerCase();
+  const inferredChord = /major\s*(7|seventh)|maj7/.test(titleLower)
+    ? `${config.rootNote}maj7`
+    : /minor\s*(7|seventh)|min7/.test(titleLower)
+      ? `${config.rootNote}m7`
+      : /dominant\s*(7|seventh)/.test(titleLower)
+        ? `${config.rootNote}7`
+        : /diminished|dim/.test(titleLower)
+          ? `${config.rootNote}dim`
+          : null;
+  const playableChords = config.chordProgression?.length
+    ? config.chordProgression
+    : config.type === "metronome" && inferredChord
+      ? [inferredChord]
+      : [];
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [remaining, setRemaining] = useState(config.sessionSeconds);
@@ -82,7 +97,7 @@ export function GeneratedToolPlayer({
   async function toggle() {
     const audio = context();
     if (audio.state === "suspended") await audio.resume();
-    if (config.chordProgression?.length) await chordSynth();
+    if (playableChords.length) await chordSynth();
     setPlaying((current) => !current);
   }
 
@@ -141,7 +156,7 @@ export function GeneratedToolPlayer({
         const bar = Math.floor(current / config.beatsPerBar) % cycleBars;
         if (bar < config.activeBars) {
           tone(beat === 0 ? 1080 : 720, 0.045, beat === 0 ? 0.2 : 0.12, "square");
-          const chords = config.chordProgression ?? [];
+          const chords = playableChords;
           const chordEveryBars = config.chordEveryBars ?? 1;
           if (beat === 0 && bar % chordEveryBars === 0 && chords.length) {
             const chordIndex = Math.floor(bar / chordEveryBars) % chords.length;
@@ -173,7 +188,7 @@ export function GeneratedToolPlayer({
   const beat = position % config.beatsPerBar;
   const bar = Math.floor(position / config.beatsPerBar) % Math.max(1, config.activeBars + config.silentBars);
   const isSilent = config.type === "metronome" && bar >= config.activeBars;
-  const chords = config.chordProgression ?? [];
+  const chords = playableChords;
   const chordEveryBars = config.chordEveryBars ?? 1;
   const currentChordIndex = chords.length ? Math.floor(bar / chordEveryBars) % chords.length : -1;
 
