@@ -62,6 +62,57 @@ function extractOutputText(response: Record<string, unknown>) {
   return "";
 }
 
+function localTool(transcript: string, prompt: string): GeneratedToolSpec {
+  const source = `${prompt} ${transcript}`.toLowerCase();
+  const bpmMatch = source.match(/\b([3-9]\d|1\d\d|2[0-3]\d|240)\s*bpm\b/);
+  const bpm = bpmMatch ? Number(bpmMatch[1]) : 80;
+  const unique = Date.now().toString(36);
+  const base = {
+    id: `guided-practice-${unique}`,
+    slug: `guided-practice-${unique}`,
+    version: 1 as const,
+    why: ["Turns the focus in your lesson into a repeatable, hands-on practice routine."],
+    configuration: {
+      bpm,
+      minBpm: 30,
+      maxBpm: 220,
+      beatsPerBar: 4,
+      activeBars: 4,
+      silentBars: 2,
+      sessionSeconds: 120,
+      rootNote: "A",
+      waveform: "sine" as const,
+      intervalSemitones: 7,
+      pattern: [2, 0, 1, 0, 1, 0, 1, 0, 2, 0, 1, 1, 0, 1, 0, 1],
+    },
+  };
+  if (/interval|ear train|recogn|sing back|pitch match/.test(source)) return {
+    ...base, title: "Interval Echo Trainer", description: "Hear a root and target interval, then sing or play it back.", category: "Ear training",
+    instructions: "Press play, listen to both notes, then pause and reproduce the interval before the next pair.",
+    configuration: { ...base.configuration, type: "interval" },
+  };
+  if (/drone|intonation|tuning|long tone|scale|chord tone/.test(source)) return {
+    ...base, title: "Focused Intonation Drone", description: "Practice sustained notes, scales, or chord tones against a steady reference pitch.", category: "Technique",
+    instructions: "Start the drone, then play slowly against it and listen for beats that disappear as your pitch centers.",
+    configuration: { ...base.configuration, type: "drone" },
+  };
+  if (/rhythm|subdivision|syncopat|sixteenth|triplet|strum/.test(source)) return {
+    ...base, title: "Rhythm Grid Trainer", description: "Loop a clear accented rhythm pattern at an adjustable tempo.", category: "Rhythm",
+    instructions: "Listen once, then clap or play with the sixteen-step pattern. Lower the tempo whenever the accents lose clarity.",
+    configuration: { ...base.configuration, type: "rhythm" },
+  };
+  if (/timer|minute|repeat|repetition|routine|session/.test(source)) return {
+    ...base, title: "Focused Repetition Timer", description: "A simple timed practice block with periodic audio checkpoints.", category: "Technique",
+    instructions: "Press start and repeat the lesson’s target slowly and cleanly until the completion tone.",
+    configuration: { ...base.configuration, type: "timer" },
+  };
+  return {
+    ...base, title: "Pulse Fade Trainer", description: "A metronome that removes clicks for short stretches so you can test your internal pulse.", category: "Metronome",
+    instructions: "Play with the clicks through the active bars. Keep the same pulse when the silent bars arrive, then check your timing when clicks return.",
+    configuration: { ...base.configuration, type: "metronome" },
+  };
+}
+
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Sign in is required." }, { status: 401 });
@@ -75,7 +126,7 @@ export async function POST(request: Request) {
   try {
     apiKey = requiredSecret("AI_PROVIDER_API_KEY");
   } catch {
-    return Response.json({ error: "The AI service is not connected yet." }, { status: 503 });
+    return Response.json({ tool: localTool(transcript, prompt), generatedBy: "guided-builder" });
   }
 
   const userId = user.email.toLowerCase();
