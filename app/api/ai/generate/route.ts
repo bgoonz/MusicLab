@@ -1,5 +1,6 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { ensureCreditAccount, releaseCredits, reserveCredits, RETAIL_MARKUP, settleCredits } from "../../../../lib/billing";
+import { moderateText } from "../../../../lib/moderation";
 import { requiredSecret } from "../../../../lib/runtime";
 import { GeneratedToolSpec, isGeneratedToolSpec } from "../../../../lib/tool-spec";
 
@@ -130,6 +131,20 @@ export async function POST(request: Request) {
     return Response.json({ tool: localTool(transcript, prompt), generatedBy: "guided-builder" });
   }
 
+  try {
+    if (await moderateText(apiKey, `${prompt}\n\n${transcript}`)) {
+      return Response.json(
+        { error: "This lesson or request cannot be used to create a public practice tool." },
+        { status: 400 },
+      );
+    }
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "The safety review could not be completed." },
+      { status: 503 },
+    );
+  }
+
   const userId = user.email.toLowerCase();
   await ensureCreditAccount(userId, user.email);
   const requestId = crypto.randomUUID();
@@ -204,6 +219,14 @@ export async function POST(request: Request) {
       version: 1,
     };
     if (!isGeneratedToolSpec(tool)) throw new Error("The AI returned a tool that the practice player could not validate.");
+    if (await moderateText(apiKey, [
+      tool.title,
+      tool.description,
+      tool.instructions,
+      ...tool.why,
+    ].join("\n"))) {
+      throw new Error("The generated tool did not pass the safety review.");
+    }
 
     const usage = (payload.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
     const inputTokens = usage.input_tokens ?? 0;

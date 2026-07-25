@@ -1,4 +1,5 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
+import { moderateText } from "../../../../lib/moderation";
 import { requiredSecret, runtime } from "../../../../lib/runtime";
 
 const CATEGORIES = new Set(["Metronome", "Play-along", "Rhythm", "Ear training", "Technique", "Sight-reading", "Theory"]);
@@ -54,10 +55,28 @@ export async function POST(request: Request) {
   if (!validManifest(manifest)) return Response.json({ error: "The generated tool manifest is invalid." }, { status: 400 });
 
   let token: string;
+  let apiKey: string;
   try {
     token = requiredSecret("GITHUB_TOKEN");
+    apiKey = requiredSecret("AI_PROVIDER_API_KEY");
   } catch {
-    return Response.json({ error: "GitHub publishing is not connected yet." }, { status: 503 });
+    return Response.json({ error: "Publishing safety services are not connected yet." }, { status: 503 });
+  }
+
+  try {
+    const text = [
+      manifest.title,
+      manifest.description,
+      JSON.stringify(manifest.configuration),
+    ].join("\n");
+    if (await moderateText(apiKey, text)) {
+      return Response.json({ error: "This tool did not pass the publication safety review." }, { status: 400 });
+    }
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "The publication safety review could not be completed." },
+      { status: 503 },
+    );
   }
 
   const bindings = runtime();
