@@ -21,7 +21,7 @@ const schema = {
     configuration: {
       type: "object",
       additionalProperties: false,
-      required: ["type", "bpm", "minBpm", "maxBpm", "beatsPerBar", "activeBars", "silentBars", "sessionSeconds", "rootNote", "waveform", "intervalSemitones", "pattern"],
+      required: ["type", "bpm", "minBpm", "maxBpm", "beatsPerBar", "activeBars", "silentBars", "sessionSeconds", "rootNote", "waveform", "intervalSemitones", "pattern", "chordProgression", "chordEveryBars"],
       properties: {
         type: { type: "string", enum: ["metronome", "rhythm", "drone", "interval", "timer"] },
         bpm: { type: "integer", minimum: 30, maximum: 240 },
@@ -40,6 +40,13 @@ const schema = {
           maxItems: 16,
           items: { type: "integer", enum: [0, 1, 2] },
         },
+        chordProgression: {
+          type: "array",
+          minItems: 0,
+          maxItems: 12,
+          items: { type: "string", maxLength: 24 },
+        },
+        chordEveryBars: { type: "integer", minimum: 1, maximum: 8 },
       },
     },
   },
@@ -86,6 +93,8 @@ function localTool(transcript: string, prompt: string): GeneratedToolSpec {
       waveform: "sine" as const,
       intervalSemitones: 7,
       pattern: [2, 0, 1, 0, 1, 0, 1, 0, 2, 0, 1, 1, 0, 1, 0, 1],
+      chordProgression: [],
+      chordEveryBars: 1,
     },
   };
   if (/interval|ear train|recogn|sing back|pitch match/.test(source)) return {
@@ -119,10 +128,23 @@ export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Sign in is required." }, { status: 401 });
 
-  const body = await request.json().catch(() => null) as { transcript?: string; prompt?: string; mode?: string } | null;
+  const body = await request.json().catch(() => null) as {
+    transcript?: string;
+    prompt?: string;
+    mode?: string;
+    refinement?: string;
+    currentTool?: unknown;
+  } | null;
   const transcript = body?.transcript?.trim().slice(0, 30_000) ?? "";
   const prompt = body?.prompt?.trim().slice(0, 3_000) ?? "";
-  if (!transcript && !prompt) return Response.json({ error: "Add lesson notes or describe a tool first." }, { status: 400 });
+  const refinement = body?.refinement?.trim().slice(0, 1_000) ?? "";
+  const currentTool = isGeneratedToolSpec(body?.currentTool) ? body.currentTool : null;
+  if (!transcript && !prompt && !(refinement && currentTool)) {
+    return Response.json({ error: "Add lesson notes or describe a tool first." }, { status: 400 });
+  }
+  const effectivePrompt = refinement && currentTool
+    ? `${prompt}\n\nRefine this existing tool according to the user's follow-up request.\nFollow-up: ${refinement}\nExisting tool: ${JSON.stringify(currentTool)}`
+    : prompt;
 
   let apiKey: string;
   try {
@@ -132,7 +154,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (await moderateText(apiKey, `${prompt}\n\n${transcript}`)) {
+    if (await moderateText(apiKey, `${effectivePrompt}\n\n${transcript}`)) {
       return Response.json(
         { error: "This lesson or request cannot be used to create a public practice tool." },
         { status: 400 },
@@ -187,11 +209,11 @@ export async function POST(request: Request) {
         input: [
           {
             role: "system",
-            content: `You design focused, immediately playable music-practice tools. Map every request to exactly one safe runtime: metronome for pulse/dropout/tempo, rhythm for subdivisions or patterns, drone for intonation/scale/chord practice, interval for ear training, or timer for repetition/session routines. All configuration fields are required even if a runtime ignores some. Pattern is sixteen steps: 0 rest, 1 hit, 2 accent. Do not claim features outside these runtimes. Write concise musician-friendly copy.`,
+            content: `You design focused, immediately playable music-practice tools. Map every request to exactly one safe runtime: metronome for pulse/dropout/tempo/chord progression, rhythm for subdivisions or patterns, drone for intonation/scale/chord practice, interval for ear training, or timer for repetition/session routines. All configuration fields are required even if a runtime ignores some. Pattern is sixteen steps: 0 rest, 1 hit, 2 accent. When hearing harmony would help, populate chordProgression with standard chord symbols such as Cmaj7, Dm7, G7, or Am and set chordEveryBars. Otherwise return an empty chordProgression. Do not claim features outside these runtimes. Write concise musician-friendly copy.`,
           },
           {
             role: "user",
-            content: `Mode: ${body?.mode === "describe" ? "User described the desired tool" : "Suggest the best tool from the lesson"}\nRequested tool: ${prompt || "(not specified)"}\nLesson transcript or notes:\n${transcript || "(not supplied)"}`,
+            content: `Mode: ${body?.mode === "describe" ? "User described the desired tool" : "Suggest the best tool from the lesson"}\nRequested tool or refinement: ${effectivePrompt || "(not specified)"}\nLesson transcript or notes:\n${transcript || "(not supplied)"}`,
           },
         ],
         text: {

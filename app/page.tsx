@@ -152,6 +152,8 @@ export default function Home() {
   const [publishingTool, setPublishingTool] = useState(false);
   const [pullRequestUrl, setPullRequestUrl] = useState("");
   const [generatedTool, setGeneratedTool] = useState<GeneratedToolSpec | null>(null);
+  const [refinement, setRefinement] = useState("");
+  const [refiningTool, setRefiningTool] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
   const [balanceUsd, setBalanceUsd] = useState<number | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState("");
@@ -255,6 +257,38 @@ export default function Home() {
       return;
     }
     window.location.assign(data.checkoutUrl);
+  }
+
+  async function refineTool() {
+    if (!generatedTool || !refinement.trim()) {
+      setNotice("Describe the change you want to make first.");
+      return;
+    }
+    setRefiningTool(true);
+    setNotice("");
+    const response = await fetch("/api/ai/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript,
+        prompt,
+        mode,
+        refinement,
+        currentTool: generatedTool,
+      }),
+    });
+    const data = await response.json() as { tool?: GeneratedToolSpec; error?: string; warning?: string };
+    setRefiningTool(false);
+    if (!response.ok || !data.tool) {
+      setNotice(data.error ?? "The AI could not apply that change.");
+      if (response.status === 402) setWalletOpen(true);
+      return;
+    }
+    setGeneratedTool(data.tool);
+    setRefinement("");
+    setPullRequestUrl("");
+    setNotice(data.warning ?? "Your changes are ready to test.");
+    void refreshBalance();
   }
 
   async function publishSuggestedTool() {
@@ -403,6 +437,27 @@ export default function Home() {
               />
               <div className="why-list">
                 {generatedTool.why.map((reason) => <span key={reason}><Check size={15} /> {reason}</span>)}
+              </div>
+              <div className="refinement-chat">
+                <label htmlFor="tool-refinement">Want to change something?</label>
+                <div>
+                  <input
+                    id="tool-refinement"
+                    value={refinement}
+                    onChange={(event) => setRefinement(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void refineTool();
+                      }
+                    }}
+                    placeholder="Add the chords on beat one, slow it down, or make the silent section longer…"
+                  />
+                  <button className="button secondary" disabled={refiningTool || !refinement.trim()} onClick={() => void refineTool()}>
+                    {refiningTool ? "Updating…" : "Apply change"}
+                  </button>
+                </div>
+                <small>Each update is a new metered AI build. Test it before publishing.</small>
               </div>
               <div className="suggestion-actions">
                 <button className="button secondary" onClick={() => setStep("input")}>Adjust idea</button>

@@ -23,6 +23,8 @@ export type GeneratedToolSpec = {
     waveform: "sine" | "triangle" | "square";
     intervalSemitones: number;
     pattern: number[];
+    chordProgression?: string[];
+    chordEveryBars?: number;
   };
 };
 
@@ -57,6 +59,16 @@ export function isGeneratedToolSpec(value: unknown): value is GeneratedToolSpec 
     Number.isFinite(configuration.intervalSemitones) &&
     Array.isArray(configuration.pattern) &&
     configuration.pattern.length === 16 &&
-    configuration.pattern.every((item) => item === 0 || item === 1 || item === 2)
+    configuration.pattern.every((item) => item === 0 || item === 1 || item === 2) &&
+    (configuration.chordProgression === undefined || (
+      Array.isArray(configuration.chordProgression) &&
+      configuration.chordProgression.length <= 12 &&
+      configuration.chordProgression.every((chord) => typeof chord === "string" && chord.length > 0 && chord.length <= 24)
+    )) &&
+    (configuration.chordEveryBars === undefined || (
+      Number.isInteger(configuration.chordEveryBars) &&
+      configuration.chordEveryBars >= 1 &&
+      configuration.chordEveryBars <= 8
+    ))
   );
 }

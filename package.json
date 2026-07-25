@@ -16,11 +16,14 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@tonaljs/chord": "^6.1.2",
+    "@tonaljs/note": "^4.12.1",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^1.26.0",
     "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

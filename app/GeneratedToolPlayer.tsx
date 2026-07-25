@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { Pause, Play, RotateCcw, Volume2 } from "lucide-react";
+import { get as getChord } from "@tonaljs/chord";
 import { useEffect, useRef, useState } from "react";
 import { GeneratedToolSpec } from "../lib/tool-spec";
 
@@ -24,6 +25,10 @@ export function GeneratedToolPlayer({
   const contextRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<number | null>(null);
   const droneRef = useRef<{ oscillator: OscillatorNode; gain: GainNode } | null>(null);
+  const chordSynthRef = useRef<{
+    triggerAttackRelease: (notes: string[], duration: string) => void;
+    dispose: () => void;
+  } | null>(null);
   const positionRef = useRef(0);
 
   function context() {
@@ -53,9 +58,31 @@ export function GeneratedToolPlayer({
     droneRef.current = null;
   }
 
+  async function chordSynth() {
+    if (chordSynthRef.current) return chordSynthRef.current;
+    const Tone = await import("tone");
+    await Tone.start();
+    const synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "triangle8" },
+      envelope: { attack: 0.025, decay: 0.22, sustain: 0.24, release: 0.9 },
+      volume: -13,
+    }).toDestination();
+    chordSynthRef.current = synth;
+    return synth;
+  }
+
+  async function playChord(symbol: string) {
+    const pitchClasses = getChord(symbol).notes;
+    if (pitchClasses.length < 2) return;
+    const notes = pitchClasses.slice(0, 6).map((note) => `${note}3`);
+    const synth = await chordSynth();
+    synth.triggerAttackRelease(notes, "2n");
+  }
+
   async function toggle() {
     const audio = context();
     if (audio.state === "suspended") await audio.resume();
+    if (config.chordProgression?.length) await chordSynth();
     setPlaying((current) => !current);
   }
 
@@ -112,7 +139,15 @@ export function GeneratedToolPlayer({
         const cycleBars = config.activeBars + config.silentBars;
         const beat = current % config.beatsPerBar;
         const bar = Math.floor(current / config.beatsPerBar) % cycleBars;
-        if (bar < config.activeBars) tone(beat === 0 ? 1080 : 720, 0.045, beat === 0 ? 0.2 : 0.12, "square");
+        if (bar < config.activeBars) {
+          tone(beat === 0 ? 1080 : 720, 0.045, beat === 0 ? 0.2 : 0.12, "square");
+          const chords = config.chordProgression ?? [];
+          const chordEveryBars = config.chordEveryBars ?? 1;
+          if (beat === 0 && bar % chordEveryBars === 0 && chords.length) {
+            const chordIndex = Math.floor(bar / chordEveryBars) % chords.length;
+            void playChord(chords[chordIndex]);
+          }
+        }
       }
       const max = config.type === "rhythm" ? 16 : config.type === "interval" ? 2 : (config.activeBars + config.silentBars) * config.beatsPerBar;
       positionRef.current = (current + 1) % Math.max(1, max);
@@ -130,12 +165,17 @@ export function GeneratedToolPlayer({
   useEffect(() => () => {
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
     stopDrone();
+    chordSynthRef.current?.dispose();
+    chordSynthRef.current = null;
     void contextRef.current?.close();
   }, []);
 
   const beat = position % config.beatsPerBar;
   const bar = Math.floor(position / config.beatsPerBar) % Math.max(1, config.activeBars + config.silentBars);
   const isSilent = config.type === "metronome" && bar >= config.activeBars;
+  const chords = config.chordProgression ?? [];
+  const chordEveryBars = config.chordEveryBars ?? 1;
+  const currentChordIndex = chords.length ? Math.floor(bar / chordEveryBars) % chords.length : -1;
 
   return (
     <section className="generated-player" aria-label={`${tool.title} test player`}>
@@ -150,7 +190,7 @@ export function GeneratedToolPlayer({
             {config.type === "drone" && `${config.rootNote} drone · ${config.waveform} tone`}
             {config.type === "interval" && `${config.rootNote} + ${config.intervalSemitones} semitones`}
             {config.type === "rhythm" && `Step ${position + 1} of 16`}
-            {config.type === "metronome" && `Bar ${bar + 1} · Beat ${beat + 1} · ${isSilent ? "hold the pulse" : "clicks on"}`}
+            {config.type === "metronome" && `Bar ${bar + 1} · Beat ${beat + 1} · ${isSilent ? "hold the pulse" : chords[currentChordIndex] ? chords[currentChordIndex] : "clicks on"}`}
           </span>
         </div>
         <button className="player-reset" onClick={reset} aria-label="Reset tool"><RotateCcw size={17} /> Reset</button>
@@ -177,13 +217,22 @@ export function GeneratedToolPlayer({
         </div>
       )}
       {config.type === "metronome" && (
-        <div className="bar-grid" aria-label="Active and silent bars">
-          {Array.from({ length: config.activeBars + config.silentBars }, (_, index) => (
-            <span key={index} className={`${index >= config.activeBars ? "silent" : ""} ${bar === index ? "current" : ""}`}>
-              {index >= config.activeBars ? "silent" : `bar ${index + 1}`}
-            </span>
-          ))}
-        </div>
+        <>
+          {chords.length > 0 && (
+            <div className="chord-strip" aria-label="Chord progression">
+              {chords.map((chord, index) => (
+                <span key={`${chord}-${index}`} className={currentChordIndex === index && !isSilent ? "current" : ""}>{chord}</span>
+              ))}
+            </div>
+          )}
+          <div className="bar-grid" aria-label="Active and silent bars">
+            {Array.from({ length: config.activeBars + config.silentBars }, (_, index) => (
+              <span key={index} className={`${index >= config.activeBars ? "silent" : ""} ${bar === index ? "current" : ""}`}>
+                {index >= config.activeBars ? "silent" : `bar ${index + 1}`}
+              </span>
+            ))}
+          </div>
+        </>
       )}
       {config.type === "drone" && <div className={`drone-orb ${playing ? "playing" : ""}`}><Volume2 size={30} /><strong>{config.rootNote}</strong></div>}
       <p className="player-instructions">{tool.instructions}</p>
