@@ -1,0 +1,45 @@
+{
+  "title": "C–G–Am–F Chord Change Drill",
+  "description": "Practice four steady beats per chord at 72 BPM, with extra focus on the G-to-Am transition.",
+  "category": "Metronome",
+  "why": [
+    "A metronome keeps the four-beat chord structure steady.",
+    "The fixed starting tempo supports clean repetitions before speeding up.",
+    "The repeated progression isolates the rushed G-to-Am change."
+  ],
+  "instructions": "Set your metronome to 72 BPM. Play C for 4 beats, G for 4, Am for 4, and F for 4, then repeat. Count aloud and prepare the next chord during beat 4 without rushing. Complete 3 clean repetitions; only then raise the tempo by 4 BPM. If you stumble, return to 72 BPM.",
+  "configuration": {
+    "type": "metronome",
+    "bpm": 72,
+    "minBpm": 72,
+    "maxBpm": 100,
+    "beatsPerBar": 4,
+    "activeBars": 4,
+    "silentBars": 0,
+    "sessionSeconds": 600,
+    "rootNote": "C",
+    "waveform": "triangle",
+    "intervalSemitones": 1,
+    "pattern": [
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+    ]
+  },
+  "id": "c-g-am-f-chord-change-drill-ms0mbhky",
+  "slug": "c-g-am-f-chord-change-drill-ms0mbhky",
+  "version": 1
+}
