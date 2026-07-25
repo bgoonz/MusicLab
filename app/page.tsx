@@ -370,7 +370,7 @@ export default function Home() {
     }
 
     setPullRequestUrl(data.pullRequestUrl);
-    setNotice("Draft created successfully. Review it on GitHub before merging.");
+    setNotice("Published to the community. A GitHub draft was saved as a backup and audit trail.");
     void refreshPublishedTools();
   }
 
@@ -534,12 +534,12 @@ export default function Home() {
               <div className="suggestion-actions">
                 <button className="button secondary" onClick={() => setStep("input")}>Adjust idea</button>
                 <button className="button primary" disabled={publishingTool} onClick={() => void publishSuggestedTool()}>
-                  {publishingTool ? "Publishing draft…" : "Publish draft to GitHub"} {!publishingTool && <GitPullRequest size={17} />}
+                  {publishingTool ? "Publishing…" : "Publish to community"} {!publishingTool && <GitPullRequest size={17} />}
                 </button>
               </div>
               {notice && (
                 <p className={pullRequestUrl ? "success-notice" : "form-notice"}>
-                  {notice} {pullRequestUrl && <a href={pullRequestUrl} target="_blank" rel="noreferrer">Open draft pull request</a>}
+                  {notice} {pullRequestUrl && <a href={pullRequestUrl} target="_blank" rel="noreferrer">View GitHub backup</a>}
                 </p>
               )}
             </div>
