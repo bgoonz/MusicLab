@@ -202,6 +202,14 @@ export async function POST(request: Request) {
     return Response.json({ tool, usage: { inputTokens, outputTokens, costUsd: actualMicroUsd / 1_000_000 } });
   } catch (error) {
     await releaseCredits(usageId, userId);
-    return Response.json({ error: error instanceof Error ? error.message : "The tool could not be generated." }, { status: 502 });
+    const message = error instanceof Error ? error.message : "The tool could not be generated.";
+    if (/quota|billing|insufficient_quota|exceeded your current/i.test(message)) {
+      return Response.json({
+        tool: localTool(transcript, prompt),
+        generatedBy: "guided-builder",
+        warning: "AI generation is temporarily unavailable because the provider account needs API billing. Your Practice Lab credits were not charged, so a guided working tool was built instead.",
+      });
+    }
+    return Response.json({ error: message }, { status: 502 });
   }
 }

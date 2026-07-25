@@ -227,7 +227,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transcript, prompt, mode }),
     });
-    const data = await response.json() as { tool?: GeneratedToolSpec; error?: string };
+    const data = await response.json() as { tool?: GeneratedToolSpec; error?: string; warning?: string };
     if (!response.ok || !data.tool) {
       setStep("input");
       setNotice(data.error ?? "The AI could not build this tool.");
@@ -235,6 +235,7 @@ export default function Home() {
       return;
     }
     setGeneratedTool(data.tool);
+    setNotice(data.warning ?? "");
     setStep("suggestions");
     void refreshBalance();
   }
