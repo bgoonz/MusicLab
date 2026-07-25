@@ -6,7 +6,8 @@ export const CREDIT_PACKAGES = {
   studio: { id: "studio", name: "Studio pack", amountCents: 3000, creditsMicroUsd: 30_000_000 },
 } as const;
 
-export const RETAIL_MARKUP = 1.5;
+// A 300% markup means provider cost plus 300%, or a 4× retail multiplier.
+export const RETAIL_MARKUP = 4;
 export const MONTHLY_PROVIDER_LIMIT_MICRO_USD = 5_000_000;
 
 export type CreditPackageId = keyof typeof CREDIT_PACKAGES;
