@@ -491,7 +491,7 @@ export default function Home() {
             <div className="wallet-balance">
               <span>Available balance</span>
               <strong>{balanceUsd === null ? "—" : `$${balanceUsd.toFixed(2)}`}</strong>
-              <small>1 credit dollar = $1 of metered AI usage</small>
+              <small>Practice Lab credits cover AI building, safety reserves, and platform operation</small>
             </div>
             <div className="credit-packages">
               {[

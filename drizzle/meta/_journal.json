@@ -15,6 +15,13 @@
       "when": 1784993840396,
       "tag": "0001_sour_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784998435966,
+      "tag": "0002_slippery_mephistopheles",
+      "breakpoints": true
     }
   ]
 }

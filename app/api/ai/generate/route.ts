@@ -1,10 +1,11 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
-import { ensureCreditAccount, releaseCredits, reserveCredits, settleCredits } from "../../../../lib/billing";
+import { ensureCreditAccount, releaseCredits, reserveCredits, RETAIL_MARKUP, settleCredits } from "../../../../lib/billing";
 import { requiredSecret } from "../../../../lib/runtime";
 import { GeneratedToolSpec, isGeneratedToolSpec } from "../../../../lib/tool-spec";
 
 const MODEL = "gpt-5.6-luna";
-const MAXIMUM_COST_MICRO_USD = 100_000;
+const MAXIMUM_PROVIDER_COST_MICRO_USD = 100_000;
+const MAXIMUM_RETAIL_COST_MICRO_USD = Math.ceil(MAXIMUM_PROVIDER_COST_MICRO_USD * RETAIL_MARKUP);
 
 const schema = {
   type: "object",
@@ -139,10 +140,21 @@ export async function POST(request: Request) {
       requestId,
       provider: "openai",
       model: MODEL,
-      maximumMicroUsd: MAXIMUM_COST_MICRO_USD,
+      maximumMicroUsd: MAXIMUM_RETAIL_COST_MICRO_USD,
+      providerMaximumMicroUsd: MAXIMUM_PROVIDER_COST_MICRO_USD,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "AI credits could not be reserved.";
+    if (message.includes("monthly AI safety limit")) {
+      return Response.json({
+        tool: localTool(transcript, prompt),
+        generatedBy: "guided-builder",
+        warning: "The monthly AI safety ceiling has been reached. Your credits were not charged, so a guided working tool was built instead.",
+      });
+    }
+    if (/unique|active request/i.test(message)) {
+      return Response.json({ error: "Finish the AI build already running on your account before starting another." }, { status: 409 });
+    }
     return Response.json({ error: message }, { status: message.includes("Insufficient") ? 402 : 500 });
   }
 
@@ -196,8 +208,9 @@ export async function POST(request: Request) {
     const usage = (payload.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
     const inputTokens = usage.input_tokens ?? 0;
     const outputTokens = usage.output_tokens ?? 0;
-    const actualMicroUsd = Math.min(MAXIMUM_COST_MICRO_USD, inputTokens + outputTokens * 6);
-    await settleCredits({ usageId, userId, inputTokens, outputTokens, actualMicroUsd });
+    const providerActualMicroUsd = Math.min(MAXIMUM_PROVIDER_COST_MICRO_USD, inputTokens + outputTokens * 6);
+    const actualMicroUsd = Math.ceil(providerActualMicroUsd * RETAIL_MARKUP);
+    await settleCredits({ usageId, userId, inputTokens, outputTokens, actualMicroUsd, providerActualMicroUsd });
 
     return Response.json({ tool, usage: { inputTokens, outputTokens, costUsd: actualMicroUsd / 1_000_000 } });
   } catch (error) {

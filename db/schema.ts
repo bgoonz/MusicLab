@@ -71,9 +71,19 @@ export const aiUsage = sqliteTable("ai_usage", {
   outputTokens: integer("output_tokens").notNull().default(0),
   reservedMicroUsd: integer("reserved_micro_usd").notNull(),
   actualMicroUsd: integer("actual_micro_usd"),
+  providerReservedMicroUsd: integer("provider_reserved_micro_usd").notNull().default(0),
+  providerActualMicroUsd: integer("provider_actual_micro_usd"),
   status: text("status", { enum: ["reserved", "settled", "released", "failed"] }).notNull().default("reserved"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   settledAt: integer("settled_at", { mode: "timestamp" }),
+});
+
+export const providerBudgets = sqliteTable("provider_budgets", {
+  bucket: text("bucket").primaryKey(),
+  reservedMicroUsd: integer("reserved_micro_usd").notNull().default(0),
+  spentMicroUsd: integer("spent_micro_usd").notNull().default(0),
+  limitMicroUsd: integer("limit_micro_usd").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
 export const githubPublications = sqliteTable("github_publications", {
