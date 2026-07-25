@@ -107,3 +107,26 @@ export async function settleCredits(input: {
     ),
   ]);
 }
+
+export async function releaseCredits(usageId: string, userId: string) {
+  const db = runtime().DB;
+  const usage = await db.prepare(
+    "SELECT reserved_micro_usd AS reserved FROM ai_usage WHERE id = ? AND user_id = ? AND status = 'reserved'",
+  ).bind(usageId, userId).first<{ reserved: number }>();
+  if (!usage) return;
+
+  const now = Date.now();
+  await db.batch([
+    db.prepare(
+      "UPDATE ai_usage SET status = 'failed', settled_at = ? WHERE id = ? AND status = 'reserved'",
+    ).bind(now, usageId),
+    db.prepare(
+      "UPDATE credit_accounts SET balance_micro_usd = balance_micro_usd + ?, updated_at = ? WHERE user_id = ?",
+    ).bind(usage.reserved, now, userId),
+    db.prepare(
+      `INSERT OR IGNORE INTO credit_ledger
+       (id, user_id, kind, amount_micro_usd, source_type, source_id, created_at)
+       VALUES (?, ?, 'refund', ?, 'ai_failure', ?, ?)`,
+    ).bind(crypto.randomUUID(), userId, usage.reserved, `failure:${usageId}`, now),
+  ]);
+}

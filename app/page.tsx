@@ -25,6 +25,8 @@ import {
   Zap,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { GeneratedToolPlayer } from "./GeneratedToolPlayer";
+import { GeneratedToolSpec } from "../lib/tool-spec";
 
 type Tool = {
   title: string;
@@ -149,6 +151,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [publishingTool, setPublishingTool] = useState(false);
   const [pullRequestUrl, setPullRequestUrl] = useState("");
+  const [generatedTool, setGeneratedTool] = useState<GeneratedToolSpec | null>(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [balanceUsd, setBalanceUsd] = useState<number | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState("");
@@ -163,13 +166,16 @@ export default function Home() {
   }
 
   useEffect(() => {
-    void refreshBalance();
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("payment") === "success") {
-      setWalletOpen(true);
-      setWalletMessage("Payment received. Your credits will appear as soon as Stripe confirms the checkout.");
-      window.setTimeout(() => void refreshBalance(), 1500);
-    }
+    const timer = window.setTimeout(() => {
+      void refreshBalance();
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("payment") === "success") {
+        setWalletOpen(true);
+        setWalletMessage("Payment received. Your credits will appear as soon as Stripe confirms the checkout.");
+        window.setTimeout(() => void refreshBalance(), 1500);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const filteredTools = useMemo(() => {
@@ -192,14 +198,29 @@ export default function Home() {
     }
   }
 
-  function buildTool() {
+  async function buildTool() {
     if (!transcript.trim() && !prompt.trim()) {
       setNotice("Add a transcript or describe what you want to practice first.");
       return;
     }
     setNotice("");
+    setGeneratedTool(null);
     setStep("analyzing");
-    window.setTimeout(() => setStep("suggestions"), 1100);
+    const response = await fetch("/api/ai/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, prompt, mode }),
+    });
+    const data = await response.json() as { tool?: GeneratedToolSpec; error?: string };
+    if (!response.ok || !data.tool) {
+      setStep("input");
+      setNotice(data.error ?? "The AI could not build this tool.");
+      if (response.status === 402) setWalletOpen(true);
+      return;
+    }
+    setGeneratedTool(data.tool);
+    setStep("suggestions");
+    void refreshBalance();
   }
 
   async function purchaseCredits(packageId: string) {
@@ -220,6 +241,10 @@ export default function Home() {
   }
 
   async function publishSuggestedTool() {
+    if (!generatedTool) {
+      setNotice("Build and test a tool before publishing it.");
+      return;
+    }
     setPublishingTool(true);
     setNotice("");
     setPullRequestUrl("");
@@ -228,19 +253,7 @@ export default function Home() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id: `pulse-fade-${Date.now()}`,
-        slug: `pulse-fade-trainer-${Date.now()}`,
-        title: "Pulse Fade Trainer",
-        description: "A metronome that gradually removes clicks, helping you hold a steady internal pulse as the tempo rises.",
-        category: "Metronome",
-        version: 1,
-        configuration: {
-          type: "gap-click",
-          initialBpm: 84,
-          activeBars: 4,
-          silentBars: 2,
-          adaptiveTempo: true,
-        },
+        ...generatedTool,
       }),
     });
     const data = await response.json() as { pullRequestUrl?: string; error?: string };
@@ -353,30 +366,31 @@ export default function Home() {
             </div>
           )}
 
-          {step === "suggestions" && (
+          {step === "suggestions" && generatedTool && (
             <div className="suggestion-state">
               <div className="suggestion-top">
                 <div>
                   <span className="suggestion-label"><Sparkles size={14} /> AI recommendation</span>
-                  <h3>Pulse Fade Trainer</h3>
-                  <p>A metronome that gradually removes clicks, helping you hold a steady internal pulse as the tempo rises.</p>
+                  <h3>{generatedTool.title}</h3>
+                  <p>{generatedTool.description}</p>
                 </div>
                 <button className="close-button" aria-label="Start over" onClick={() => setStep("input")}><X size={20} /></button>
               </div>
-              <div className="practice-preview">
-                <div className="tempo-display"><strong>84</strong><span>BPM</span></div>
-                <input aria-label="Tempo" type="range" min="50" max="160" defaultValue="84" />
-                <button aria-label="Play practice tool"><Play size={20} fill="currentColor" /></button>
-                <div className="preview-copy"><b>4 bars on · 2 bars silent</b><small>Difficulty rises after three clean rounds</small></div>
-              </div>
+              <GeneratedToolPlayer
+                key={generatedTool.id}
+                tool={generatedTool}
+                onBpmChange={(bpm) => setGeneratedTool((current) => current ? {
+                  ...current,
+                  configuration: { ...current.configuration, bpm },
+                } : current)}
+              />
               <div className="why-list">
-                <span><Check size={15} /> Targets the timing drift mentioned in your lesson</span>
-                <span><Check size={15} /> Starts below your current working tempo</span>
+                {generatedTool.why.map((reason) => <span key={reason}><Check size={15} /> {reason}</span>)}
               </div>
               <div className="suggestion-actions">
                 <button className="button secondary" onClick={() => setStep("input")}>Adjust idea</button>
                 <button className="button primary" disabled={publishingTool} onClick={() => void publishSuggestedTool()}>
-                  {publishingTool ? "Publishing draft…" : "Build this tool"} {!publishingTool && <ArrowRight size={17} />}
+                  {publishingTool ? "Publishing draft…" : "Publish draft to GitHub"} {!publishingTool && <GitPullRequest size={17} />}
                 </button>
               </div>
               {notice && (
