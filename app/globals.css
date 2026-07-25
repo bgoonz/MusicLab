@@ -47,6 +47,10 @@ nav a:hover, footer a:hover { color: var(--purple); }
 .icon-button, .avatar, .close-button { border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
 .icon-button { width: 38px; height: 38px; }
 .avatar { width: 39px; height: 39px; border: 1px solid var(--line); border-radius: 50%; color: var(--purple); background: #fff; }
+.sign-in-link { padding: 9px 14px; border-radius: 999px; background: var(--purple); color: white; font-size: 12px; font-weight: 750; }
+.profile-control { position: relative; }
+.profile-menu { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: 220px; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: white; box-shadow: 0 16px 45px rgba(43,34,25,.16); display: flex; flex-direction: column; gap: 7px; }
+.profile-menu b { font-size: 12px; }.profile-menu small { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }.profile-menu a { padding-top: 7px; border-top: 1px solid var(--line); color: var(--purple); font-size: 11px; font-weight: 700; }
 
 .hero {
   min-height: 635px;
@@ -165,6 +169,9 @@ nav a:hover, footer a:hover { color: var(--purple); }
 .discover-heading { max-width: 1120px; margin: 0 auto 29px; display: flex; justify-content: space-between; align-items: flex-end; }
 .discover-heading h2 { margin-bottom: 0; }.discover-heading > a { color: var(--purple); font-size: 13px; font-weight: 700; display: flex; gap: 7px; align-items: center; padding-bottom: 7px; }
 .library-controls { max-width: 1120px; margin: 0 auto 25px; display: flex; justify-content: space-between; gap: 20px; align-items: center; }
+.library-scope { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: white; }
+.library-scope button { border: 0; border-radius: 999px; padding: 8px 13px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 750; cursor: pointer; }
+.library-scope button.active { background: var(--purple); color: white; }
 .category-row { display: flex; gap: 7px; flex-wrap: wrap; }
 .category-row button { height: 34px; border-radius: 999px; padding: 0 13px; border: 1px solid var(--line); background: #fff; color: #67616d; font-size: 11px; cursor: pointer; }
 .category-row button.active { background: var(--ink); color: white; border-color: var(--ink); }
@@ -178,6 +185,9 @@ nav a:hover, footer a:hover { color: var(--purple); }
 .wave-mark { display: flex; align-items: center; gap: 7px; color: rgba(52,45,58,.22); }.wave-mark span { width: 4px; height: 30px; background: currentColor; border-radius: 9px; }.wave-mark span:nth-child(2) { height: 54px; }.wave-mark span:nth-child(3) { height: 77px; }.wave-mark span:nth-child(4) { height: 45px; }.wave-mark span:nth-child(5) { height: 25px; }
 .round-play { position: absolute; width: 47px; height: 47px; display: grid; place-items: center; color: white; background: rgba(38,34,45,.86); border: 4px solid rgba(255,255,255,.55); border-radius: 50%; cursor: pointer; }
 .tool-body { padding: 17px 18px 15px; }.tool-category { color: var(--purple); display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }.tool-body h3 { font-size: 17px; margin: 10px 0 6px; }.tool-body p { min-height: 40px; color: var(--muted); font-size: 11.5px; line-height: 1.55; margin: 0; }.tool-meta { border-top: 1px solid #f0ece6; margin-top: 15px; padding-top: 11px; display: flex; justify-content: space-between; color: #918b95; font-size: 9px; }.tool-meta span { display: flex; align-items: center; gap: 4px; }
+.mine-badge { padding: 3px 7px; border-radius: 999px; background: var(--purple-soft); color: var(--purple); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.auth-prompt { max-width: 1120px; margin: 18px auto; padding: 28px; border: 1px dashed #cfc7bd; border-radius: 14px; background: white; display: flex; align-items: center; justify-content: center; gap: 13px; color: var(--muted); }
+.auth-prompt b { color: var(--ink); font-size: 13px; }
 .empty-state { max-width: 1120px; margin: 0 auto; min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); gap: 8px; background: white; border: 1px dashed var(--line); border-radius: 14px; }.empty-state b { color: var(--ink); }
 
 .cta-section { padding: 68px max(24px, calc((100% - 1120px)/2)); background: var(--purple); color: white; display: flex; align-items: center; justify-content: space-between; gap: 40px; }
@@ -188,6 +198,7 @@ footer > div { grid-column: 2; grid-row: 1 / 3; display: flex; gap: 24px; font-s
 footer small { grid-column: 1 / -1; border-top: 1px solid var(--line); margin-top: 27px; padding-top: 20px; color: #9a949d; font-size: 9px; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; padding: 22px; background: rgba(26,22,38,.55); backdrop-filter: blur(6px); display: grid; place-items: center; }
+.tool-preview-modal { width: min(760px, calc(100vw - 30px)); max-height: calc(100vh - 40px); overflow: auto; padding: 25px; border-radius: 17px; background: white; box-shadow: 0 24px 80px rgba(25,20,15,.25); }
 .wallet-modal { position: relative; width: min(620px, 100%); max-height: calc(100vh - 44px); overflow-y: auto; padding: 35px; border-radius: 20px; background: var(--paper); box-shadow: 0 30px 90px rgba(18,14,35,.25); text-align: center; }
 .wallet-close { position: absolute; top: 18px; right: 18px; width: 36px; height: 36px; border-radius: 50%; background: #f3efe9; }
 .wallet-icon { width: 52px; height: 52px; margin: 0 auto 15px; border-radius: 16px; display: grid; place-items: center; color: white; background: var(--purple); }

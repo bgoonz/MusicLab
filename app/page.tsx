@@ -29,6 +29,7 @@ import { GeneratedToolPlayer } from "./GeneratedToolPlayer";
 import { GeneratedToolSpec } from "../lib/tool-spec";
 
 type Tool = {
+  id?: string;
   title: string;
   description: string;
   category: string;
@@ -37,9 +38,23 @@ type Tool = {
   tint: string;
   author: string;
   featured?: boolean;
+  isMine?: boolean;
+  manifest?: GeneratedToolSpec;
 };
 
-const tools: Tool[] = [
+type AuthState = {
+  user: { displayName: string; email: string } | null;
+  signInUrl: string;
+  signOutUrl: string;
+};
+
+type PublishedTool = GeneratedToolSpec & {
+  authorName: string;
+  isMine: boolean;
+  useCount: number;
+};
+
+const starterTools: Tool[] = [
   {
     title: "Accent Shift Metronome",
     description: "Move the accent through each beat to strengthen your internal pulse.",
@@ -108,7 +123,7 @@ function ToolIcon({ type }: { type: Tool["icon"] }) {
   return <Mic2 size={23} strokeWidth={1.9} />;
 }
 
-function ToolCard({ tool }: { tool: Tool }) {
+function ToolCard({ tool, onOpen }: { tool: Tool; onOpen?: (tool: GeneratedToolSpec) => void }) {
   const [playing, setPlaying] = useState(false);
   return (
     <article className="tool-card">
@@ -119,7 +134,10 @@ function ToolCard({ tool }: { tool: Tool }) {
         <button
           className="round-play"
           aria-label={`${playing ? "Pause" : "Preview"} ${tool.title}`}
-          onClick={() => setPlaying(!playing)}
+          onClick={() => {
+            if (tool.manifest && onOpen) onOpen(tool.manifest);
+            else setPlaying(!playing);
+          }}
         >
           {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
         </button>
@@ -133,6 +151,7 @@ function ToolCard({ tool }: { tool: Tool }) {
         <p>{tool.description}</p>
         <div className="tool-meta">
           <span>by {tool.author}</span>
+          {tool.isMine && <span className="mine-badge">Yours</span>}
           <span><Zap size={13} fill="currentColor" /> {tool.uses} uses</span>
         </div>
       </div>
@@ -142,7 +161,12 @@ function ToolCard({ tool }: { tool: Tool }) {
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("All tools");
+  const [libraryScope, setLibraryScope] = useState<"all" | "mine">("all");
   const [query, setQuery] = useState("");
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [publishedTools, setPublishedTools] = useState<PublishedTool[]>([]);
+  const [selectedLibraryTool, setSelectedLibraryTool] = useState<GeneratedToolSpec | null>(null);
   const [transcript, setTranscript] = useState("");
   const [fileName, setFileName] = useState("");
   const [mode, setMode] = useState<"suggest" | "describe">("suggest");
@@ -167,9 +191,21 @@ export default function Home() {
     setBalanceUsd(data.balanceUsd);
   }
 
+  async function refreshPublishedTools() {
+    const response = await fetch("/api/tools");
+    if (!response.ok) return;
+    const data = await response.json() as { tools?: PublishedTool[] };
+    setPublishedTools(data.tools ?? []);
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshBalance();
+      void refreshPublishedTools();
+      void fetch("/api/auth/me").then(async (response) => {
+        if (!response.ok) return;
+        setAuth(await response.json() as AuthState);
+      });
       const params = new URLSearchParams(window.location.search);
       if (params.get("payment") === "success") {
         setWalletOpen(true);
@@ -198,12 +234,30 @@ export default function Home() {
 
   const filteredTools = useMemo(() => {
     const normalized = query.toLowerCase();
-    return tools.filter((tool) => {
+    const communityTools: Tool[] = publishedTools.map((tool, index) => ({
+      id: tool.id,
+      title: tool.title,
+      description: tool.description,
+      category: tool.category,
+      icon: tool.configuration.type === "rhythm" ? "rhythm"
+        : tool.configuration.type === "interval" ? "ear"
+          : tool.configuration.type === "drone" ? "track"
+            : "timer",
+      uses: String(tool.useCount),
+      tint: ["peach", "lavender", "blue", "mint", "yellow", "pink"][index % 6],
+      author: tool.authorName,
+      isMine: tool.isMine,
+      manifest: tool,
+    }));
+    const availableTools = libraryScope === "mine"
+      ? communityTools.filter((tool) => tool.isMine)
+      : [...communityTools, ...starterTools];
+    return availableTools.filter((tool) => {
       const matchesCategory = activeCategory === "All tools" || tool.category === activeCategory;
       const matchesSearch = `${tool.title} ${tool.description} ${tool.category}`.toLowerCase().includes(normalized);
       return matchesCategory && matchesSearch;
     });
-  }, [activeCategory, query]);
+  }, [activeCategory, libraryScope, publishedTools, query]);
 
   async function readFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -317,6 +371,7 @@ export default function Home() {
 
     setPullRequestUrl(data.pullRequestUrl);
     setNotice("Draft created successfully. Review it on GitHub before merging.");
+    void refreshPublishedTools();
   }
 
   return (
@@ -327,7 +382,8 @@ export default function Home() {
           <span>Practice <b>Lab</b></span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="#discover">Discover</a>
+          <a href="#library" onClick={() => setLibraryScope("all")}>All tools</a>
+          <a href="#library" onClick={() => setLibraryScope("mine")}>My tools</a>
           <a href="#how">How it works</a>
           <a href="#create">Build a tool</a>
         </nav>
@@ -339,7 +395,23 @@ export default function Home() {
           <button className="icon-button" aria-label="Search tools" onClick={() => document.querySelector<HTMLInputElement>("#tool-search")?.focus()}>
             <Search size={20} />
           </button>
-          <button className="avatar" aria-label="Open profile menu"><CircleUserRound size={22} /></button>
+          {!auth?.user ? (
+            <a className="sign-in-link" href={auth?.signInUrl ?? "/signin-with-chatgpt?return_to=%2F%23library"}>Sign in</a>
+          ) : (
+            <div className="profile-control">
+              <button className="avatar" aria-label="Open profile menu" onClick={() => setProfileOpen((open) => !open)}>
+                <CircleUserRound size={22} />
+              </button>
+              {profileOpen && (
+                <div className="profile-menu">
+                  <b>{auth.user.displayName}</b>
+                  <small>{auth.user.email}</small>
+                  <a href="#library" onClick={() => { setLibraryScope("mine"); setProfileOpen(false); }}>My tools</a>
+                  <a href={auth.signOutUrl}>Sign out</a>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -497,6 +569,10 @@ export default function Home() {
           <a href="#library">View all tools <ArrowRight size={17} /></a>
         </div>
         <div className="library-controls" id="library">
+          <div className="library-scope" aria-label="Tool ownership filter">
+            <button className={libraryScope === "all" ? "active" : ""} onClick={() => setLibraryScope("all")}>All tools</button>
+            <button className={libraryScope === "mine" ? "active" : ""} onClick={() => setLibraryScope("mine")}>My tools</button>
+          </div>
           <div className="category-row">
             {categories.map((category) => (
               <button key={category} className={activeCategory === category ? "active" : ""} onClick={() => setActiveCategory(category)}>
@@ -509,10 +585,21 @@ export default function Home() {
             <input id="tool-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search tools" />
           </label>
         </div>
+        {libraryScope === "mine" && !auth?.user && (
+          <div className="auth-prompt">
+            <CircleUserRound size={25} />
+            <b>Sign in to see the tools you created.</b>
+            <a className="button primary" href={auth?.signInUrl ?? "/signin-with-chatgpt?return_to=%2F%23library"}>Sign in with ChatGPT</a>
+          </div>
+        )}
         <div className="tool-grid">
-          {filteredTools.map((tool) => <ToolCard key={tool.title} tool={tool} />)}
+          {(libraryScope !== "mine" || auth?.user) && filteredTools.map((tool) => (
+            <ToolCard key={tool.id ?? tool.title} tool={tool} onOpen={setSelectedLibraryTool} />
+          ))}
         </div>
-        {filteredTools.length === 0 && <div className="empty-state"><ListMusic size={28} /><b>No tools match that search yet.</b><span>Try another category or a broader phrase.</span></div>}
+        {(libraryScope !== "mine" || auth?.user) && filteredTools.length === 0 && (
+          <div className="empty-state"><ListMusic size={28} /><b>{libraryScope === "mine" ? "You haven’t published any tools yet." : "No tools match that search yet."}</b><span>{libraryScope === "mine" ? "Build and publish a tool to see it here." : "Try another category or a broader phrase."}</span></div>
+        )}
       </section>
 
       <section className="cta-section">
@@ -530,6 +617,27 @@ export default function Home() {
         <div><a href="#discover">Discover</a><a href="#how">How it works</a><a href="#create">Build a tool</a></div>
         <small>© 2026 Practice Lab · Made with care for musicians everywhere.</small>
       </footer>
+
+      {selectedLibraryTool && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.currentTarget === event.target) setSelectedLibraryTool(null);
+        }}>
+          <section className="tool-preview-modal" role="dialog" aria-modal="true" aria-label={`Practice with ${selectedLibraryTool.title}`}>
+            <div className="modal-heading">
+              <div><span>Community tool</span><h2>{selectedLibraryTool.title}</h2><p>{selectedLibraryTool.description}</p></div>
+              <button className="close-button" aria-label="Close tool" onClick={() => setSelectedLibraryTool(null)}><X size={20} /></button>
+            </div>
+            <GeneratedToolPlayer
+              key={selectedLibraryTool.id}
+              tool={selectedLibraryTool}
+              onBpmChange={(bpm) => setSelectedLibraryTool((current) => current ? {
+                ...current,
+                configuration: { ...current.configuration, bpm },
+              } : current)}
+            />
+          </section>
+        </div>
+      )}
 
       {walletOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {

@@ -1,18 +1,7 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { moderateText } from "../../../../lib/moderation";
 import { requiredSecret, runtime } from "../../../../lib/runtime";
-
-const CATEGORIES = new Set(["Metronome", "Play-along", "Rhythm", "Ear training", "Technique", "Sight-reading", "Theory"]);
-
-type ToolManifest = {
-  id: string;
-  slug: string;
-  title: string;
-  description: string;
-  category: string;
-  version: 1;
-  configuration: Record<string, unknown>;
-};
+import { GeneratedToolSpec, isGeneratedToolSpec } from "../../../../lib/tool-spec";
 
 async function github(path: string, token: string, init?: RequestInit) {
   const response = await fetch(`https://api.github.com${path}`, {
@@ -30,22 +19,8 @@ async function github(path: string, token: string, init?: RequestInit) {
   return data;
 }
 
-function validManifest(value: unknown): value is ToolManifest {
-  if (!value || typeof value !== "object") return false;
-  const tool = value as Partial<ToolManifest>;
-  return (
-    typeof tool.id === "string" &&
-    /^[a-z0-9-]{3,64}$/.test(tool.slug ?? "") &&
-    typeof tool.title === "string" &&
-    tool.title.length <= 100 &&
-    typeof tool.description === "string" &&
-    tool.description.length <= 500 &&
-    typeof tool.category === "string" &&
-    CATEGORIES.has(tool.category) &&
-    tool.version === 1 &&
-    !!tool.configuration &&
-    typeof tool.configuration === "object"
-  );
+function validManifest(value: unknown): value is GeneratedToolSpec {
+  return isGeneratedToolSpec(value) && /^[a-z0-9-]{3,64}$/.test(value.slug);
 }
 
 export async function POST(request: Request) {
@@ -97,7 +72,7 @@ export async function POST(request: Request) {
     });
 
     const content = btoa(unescape(encodeURIComponent(`${JSON.stringify(manifest, null, 2)}\n`)));
-    await github(`/repos/${owner}/${repo}/contents/generated-tools/${manifest.slug}.json`, token, {
+    const fileCommit = await github(`/repos/${owner}/${repo}/contents/generated-tools/${manifest.slug}.json`, token, {
       method: "PUT",
       body: JSON.stringify({
         message: `feat(tools): add ${manifest.title}`,
@@ -118,11 +93,43 @@ export async function POST(request: Request) {
     });
 
     const pullRequestUrl = typeof pullRequest.html_url === "string" ? pullRequest.html_url : null;
+    const repositoryCommit = (fileCommit.commit as { sha?: string } | undefined)?.sha ?? null;
+    const authorName = user.fullName?.trim() || user.email.split("@")[0] || "Practice Lab musician";
+    const now = Date.now();
+    await bindings.DB.prepare(
+      `INSERT INTO practice_tools
+       (id, slug, title, description, category, source_path, manifest_json,
+        repository_commit, author_id, author_name, status, use_count, created_at, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', 0, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         title = excluded.title,
+         description = excluded.description,
+         category = excluded.category,
+         manifest_json = excluded.manifest_json,
+         repository_commit = excluded.repository_commit,
+         author_name = excluded.author_name,
+         status = 'published',
+         published_at = excluded.published_at
+       WHERE practice_tools.author_id = excluded.author_id`,
+    ).bind(
+      manifest.id,
+      manifest.slug,
+      manifest.title,
+      manifest.description,
+      manifest.category,
+      `generated-tools/${manifest.slug}.json`,
+      JSON.stringify(manifest),
+      repositoryCommit,
+      user.email.toLowerCase(),
+      authorName,
+      now,
+      now,
+    ).run();
     await bindings.DB.prepare(
       `INSERT INTO github_publications
        (id, tool_id, user_id, branch, pull_request_url, status, created_at)
        VALUES (?, ?, ?, ?, ?, 'review', ?)`,
-    ).bind(crypto.randomUUID(), manifest.id, user.email.toLowerCase(), branch, pullRequestUrl, Date.now()).run();
+    ).bind(crypto.randomUUID(), manifest.id, user.email.toLowerCase(), branch, pullRequestUrl, now).run();
 
     return Response.json({ pullRequestUrl, branch });
   } catch (error) {
