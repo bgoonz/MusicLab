@@ -147,6 +147,8 @@ export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [step, setStep] = useState<"input" | "analyzing" | "suggestions">("input");
   const [notice, setNotice] = useState("");
+  const [publishingTool, setPublishingTool] = useState(false);
+  const [pullRequestUrl, setPullRequestUrl] = useState("");
   const [walletOpen, setWalletOpen] = useState(false);
   const [balanceUsd, setBalanceUsd] = useState<number | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState("");
@@ -215,6 +217,42 @@ export default function Home() {
       return;
     }
     window.location.assign(data.checkoutUrl);
+  }
+
+  async function publishSuggestedTool() {
+    setPublishingTool(true);
+    setNotice("");
+    setPullRequestUrl("");
+
+    const response = await fetch("/api/github/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: `pulse-fade-${Date.now()}`,
+        slug: `pulse-fade-trainer-${Date.now()}`,
+        title: "Pulse Fade Trainer",
+        description: "A metronome that gradually removes clicks, helping you hold a steady internal pulse as the tempo rises.",
+        category: "Metronome",
+        version: 1,
+        configuration: {
+          type: "gap-click",
+          initialBpm: 84,
+          activeBars: 4,
+          silentBars: 2,
+          adaptiveTempo: true,
+        },
+      }),
+    });
+    const data = await response.json() as { pullRequestUrl?: string; error?: string };
+    setPublishingTool(false);
+
+    if (!response.ok || !data.pullRequestUrl) {
+      setNotice(data.error ?? "The tool could not be published.");
+      return;
+    }
+
+    setPullRequestUrl(data.pullRequestUrl);
+    setNotice("Draft created successfully. Review it on GitHub before merging.");
   }
 
   return (
@@ -337,9 +375,15 @@ export default function Home() {
               </div>
               <div className="suggestion-actions">
                 <button className="button secondary" onClick={() => setStep("input")}>Adjust idea</button>
-                <button className="button primary" onClick={() => setNotice("Your tool is ready for the AI and GitHub services to be connected.")}>Build this tool <ArrowRight size={17} /></button>
+                <button className="button primary" disabled={publishingTool} onClick={() => void publishSuggestedTool()}>
+                  {publishingTool ? "Publishing draft…" : "Build this tool"} {!publishingTool && <ArrowRight size={17} />}
+                </button>
               </div>
-              {notice && <p className="success-notice">{notice}</p>}
+              {notice && (
+                <p className={pullRequestUrl ? "success-notice" : "form-notice"}>
+                  {notice} {pullRequestUrl && <a href={pullRequestUrl} target="_blank" rel="noreferrer">Open draft pull request</a>}
+                </p>
+              )}
             </div>
           )}
         </div>
