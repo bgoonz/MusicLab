@@ -1,0 +1,15 @@
+{
+  "id": "pulse-fade-1784995696781",
+  "slug": "pulse-fade-trainer-1784995696781",
+  "title": "Pulse Fade Trainer",
+  "description": "A metronome that gradually removes clicks, helping you hold a steady internal pulse as the tempo rises.",
+  "category": "Metronome",
+  "version": 1,
+  "configuration": {
+    "type": "gap-click",
+    "initialBpm": 84,
+    "activeBars": 4,
+    "silentBars": 2,
+    "adaptiveTempo": true
+  }
+}
